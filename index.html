@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ex 6: Max Flow in a Traffic Network</title>
+<style>
+:root{--bg:#f7f7f5;--card:#fff;--tx:#1c1c1a;--mut:#6b6b66;--bd:#dcdcd6;--ac:#2a6fdb;--ac2:#d9622b;--ok:#1a7f4b;--bad:#c0392b;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#171717;--card:#222221;--tx:#ececE8;--mut:#9a9a94;--bd:#3a3a37;--ac:#6aa5ff;--ac2:#f08a55;--ok:#4cc58a;--bad:#ff7b6b;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#171717;--card:#222221;--tx:#ececE8;--mut:#9a9a94;--bd:#3a3a37;--ac:#6aa5ff;--ac2:#f08a55;--ok:#4cc58a;--bad:#ff7b6b;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:960px;margin:0 auto;padding:20px 16px 48px}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:0 0 12px}
+.sub{color:var(--mut);margin:0 0 18px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin-bottom:16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-top:12px}
+label{display:block;font-size:13px;color:var(--mut)}
+input,textarea{width:100%;box-sizing:border-box;margin-top:4px;padding:8px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx);font:inherit}
+textarea{font:13px/1.4 ui-monospace,Menlo,Consolas,monospace;resize:vertical}
+button{background:var(--ac);color:#fff;border:0;border-radius:8px;padding:9px 16px;font:inherit;font-weight:600;cursor:pointer}
+button.sec{background:transparent;color:var(--ac);border:1px solid var(--ac)}
+button:disabled{opacity:.6}
+.row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;align-items:center}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{padding:6px 10px;border-bottom:1px solid var(--bd);text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--mut);font-weight:600}
+pre{margin:0;font:13px/1.55 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap}
+.out{background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:10px;overflow-x:auto;margin-top:12px}
+.charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-top:12px}
+svg text{fill:var(--tx);font-size:11px}svg .m{fill:var(--mut)}
+.note{color:var(--mut);font-size:13px;margin:8px 0 0}
+.ok{color:var(--ok);font-weight:600}.bad{color:var(--bad);font-weight:600}
+.sat{color:var(--ac2);font-weight:600}
+h3{font-size:14px;margin:16px 0 4px}
+</style>
+</head>
+<body>
+<main>
+<h1>Experiment 6: Maximum Flow in a Traffic Network</h1>
+<p class="sub">Edmonds-Karp (BFS augmenting paths) on a road network: maximum vehicles/hour, bottleneck roads (minimum cut), per-road utilisation, what-if scenarios and scalability on grid networks.</p>
+
+<div class="card">
+<h2>1. Your road network</h2>
+<div class="grid">
+<label>Source junction<input id="src" value="Source"></label>
+<label>Destination junction<input id="dst" value="Central"></label>
+</div>
+<div class="two">
+<label>Roads, one per line: <code>from to capacity</code> (vehicles/hour)
+<textarea id="roads" rows="12">Source Guindy 1800
+Source Saidapet 1500
+Guindy T.Nagar 900
+Guindy Vadapalani 1000
+Saidapet T.Nagar 800
+Saidapet Kodambakkam 700
+T.Nagar Egmore 1200
+Vadapalani Kodambakkam 400
+Vadapalani Egmore 600
+Kodambakkam Central 900
+Egmore Central 1600
+T.Nagar Kodambakkam 300</textarea></label>
+<label>What-if scenarios, one per line: <code>from to new_capacity</code> (0 = closure)
+<textarea id="whatif" rows="12">Egmore Central 0
+Kodambakkam Central 1500</textarea></label>
+</div>
+<div class="row"><button id="bFlow">Compute max flow</button><button class="sec" id="bReset">Reset to city example</button></div>
+</div>
+
+<div id="r1" style="display:none">
+<div class="card">
+<h2>Maximum flow result</h2>
+<div class="out"><pre id="fOut"></pre></div>
+<h3>Road utilisation at maximum flow</h3>
+<div class="scroll"><table id="tU"></table></div>
+<div class="charts">
+<div><svg id="c1" width="100%" role="img" aria-label="Road utilisation"></svg></div>
+<div><svg id="c2" viewBox="0 0 400 270" width="100%" role="img" aria-label="Throughput under what-if scenarios"></svg></div>
+</div>
+<div class="scroll"><table id="tW" style="margin-top:12px"></table></div>
+</div>
+</div>
+
+<div class="card">
+<h2>2. Scalability on k × k grid road networks</h2>
+<div class="grid">
+<label>Grid sizes k (comma separated)<input id="ks" value="10, 20, 30"></label>
+<label>Min capacity<input id="cmin" type="number" min="1" value="200"></label>
+<label>Max capacity<input id="cmax" type="number" min="1" value="2000"></label>
+<label>Random seed<input id="seed" type="number" value="10"></label>
+</div>
+<div class="row"><button id="bGrid">Run scalability test</button><span id="busy" class="note" style="display:none">Running…</span></div>
+<p class="note">Roads run right and down; flow goes from the top-left to the bottom-right junction. Max k is 60.</p>
+<div id="r2" style="display:none">
+<div class="scroll" style="margin-top:12px"><table id="tG"></table></div>
+<div class="charts">
+<div><svg id="c3" viewBox="0 0 400 270" width="100%" role="img" aria-label="Time vs vertices"></svg></div>
+<div><svg id="c4" viewBox="0 0 400 270" width="100%" role="img" aria-label="Augmentations vs vertices"></svg></div>
+</div>
+</div>
+</div>
+</main>
+
+<script>
+class Net{
+  constructor(names,edges){
+    this.names=names;this.n=names.length;
+    this.idx=new Map(names.map((s,i)=>[s,i]));
+    this.cap=new Map();this.adj=Array.from({length:this.n},()=>new Set());
+    for(const [u,v,c] of edges)this.addRoad(this.idx.get(u),this.idx.get(v),c);
+  }
+  k(u,v){return u*this.n+v}
+  addRoad(u,v,c){const key=this.k(u,v);this.cap.set(key,(this.cap.get(key)||0)+c);this.adj[u].add(v);this.adj[v].add(u)}
+  setCap(u,v,c){this.cap.set(this.k(u,v),c);this.adj[u].add(v);this.adj[v].add(u)}
+  sorted(){this.nb=this.adj.map(s=>[...s].sort((a,b)=>a-b))}
+  edmondsKarp(s,t,verbose){
+    this.sorted();const n=this.n,flow=new Map(),paths=[];
+    const fl=(u,v)=>flow.get(u*n+v)||0,cp=(u,v)=>this.cap.get(u*n+v)||0;
+    let total=0,it=0;
+    for(;;){
+      const par=new Int32Array(n).fill(-1);par[s]=s;const q=[s];let h=0;
+      while(h<q.length&&par[t]===-1){const u=q[h++];
+        for(const v of this.nb[u])if(par[v]===-1&&cp(u,v)-fl(u,v)>0){par[v]=u;q.push(v)}}
+      if(par[t]===-1)break;
+      let b=Infinity,v=t;
+      while(v!==s){const u=par[v];b=Math.min(b,cp(u,v)-fl(u,v));v=u}
+      const path=[t];v=t;
+      while(v!==s){const u=par[v];flow.set(u*n+v,fl(u,v)+b);flow.set(v*n+u,fl(v,u)-b);v=u;path.push(u)}
+      total+=b;it++;
+      if(verbose)paths.push({p:path.reverse().map(x=>this.names[x]),b});
+    }
+    this.flow=flow;return{total,it,paths};
+  }
+  minCut(s){
+    const n=this.n,seen=new Set([s]),q=[s];let h=0;
+    while(h<q.length){const u=q[h++];for(const v of this.nb[u])
+      if(!seen.has(v)&&(this.cap.get(u*n+v)||0)-(this.flow.get(u*n+v)||0)>0){seen.add(v);q.push(v)}}
+    const cut=[];
+    for(let u=0;u<n;u++)if(seen.has(u))for(const v of this.nb[u])
+      if(!seen.has(v)&&(this.cap.get(u*n+v)||0)>0)cut.push([this.names[u],this.names[v],this.cap.get(u*n+v)]);
+    return cut;
+  }
+}
+function rng(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const $=id=>document.getElementById(id);
+const fmt=x=>Number(x).toLocaleString('en-US');
+const CITY={src:'Source',dst:'Central',roads:'Source Guindy 1800\nSource Saidapet 1500\nGuindy T.Nagar 900\nGuindy Vadapalani 1000\nSaidapet T.Nagar 800\nSaidapet Kodambakkam 700\nT.Nagar Egmore 1200\nVadapalani Kodambakkam 400\nVadapalani Egmore 600\nKodambakkam Central 900\nEgmore Central 1600\nT.Nagar Kodambakkam 300',wi:'Egmore Central 0\nKodambakkam Central 1500'};
+$('bReset').onclick=()=>{$('src').value=CITY.src;$('dst').value=CITY.dst;$('roads').value=CITY.roads;$('whatif').value=CITY.wi};
+
+function parseLines(text,label){
+  const out=[];
+  for(const line of text.split('\n')){
+    const t=line.trim();if(!t)continue;
+    const p=t.split(/[\s,]+/);
+    const c=Number(p[2]);
+    if(p.length!==3||!Number.isInteger(c)||c<0)throw new Error('Bad '+label+' line: "'+t+'". Use: from to capacity (non-negative integer).');
+    out.push([p[0],p[1],c]);
+  }
+  return out;
+}
+function build(roads,src,dst){
+  const names=[];const add=s=>{if(!names.includes(s))names.push(s)};
+  roads.forEach(([u,v])=>{add(u);add(v)});
+  if(!names.includes(src))throw new Error('Source "'+src+'" does not appear in the roads.');
+  if(!names.includes(dst))throw new Error('Destination "'+dst+'" does not appear in the roads.');
+  return new Net(names,roads);
+}
+
+$('bFlow').onclick=()=>{try{flowRun()}catch(e){alert(e.message)}};
+function flowRun(){
+  const src=$('src').value.trim(),dst=$('dst').value.trim();
+  if(src===dst)throw new Error('Source and destination must differ.');
+  const roads=parseLines($('roads').value,'road');
+  if(!roads.length)throw new Error('Enter at least one road.');
+  const sc=parseLines($('whatif').value,'scenario');
+  const g=build(roads,src,dst),s=g.idx.get(src),t=g.idx.get(dst);
+  const r=g.edmondsKarp(s,t,true),flow=g.flow;
+  const cut=g.minCut(s),cutCap=cut.reduce((a,c)=>a+c[2],0);
+  let o='';
+  r.paths.forEach((x,i)=>o+=`Aug ${i+1}: ${x.p.join(' → ')} (+${x.b})\n`);
+  if(!r.paths.length)o+='No path from source to destination.\n';
+  o+=`\nMaximum throughput ${src} → ${dst}: ${fmt(r.total)} vehicles/hour (${r.it} augmentations)\n`;
+  o+='\nBottleneck roads (minimum cut):\n';
+  cut.forEach(([u,v,c])=>o+=`  ${u} → ${v}   capacity ${fmt(c)}\n`);
+  o+=`  Cut capacity = ${fmt(cutCap)}  ${cutCap===r.total?'(= max flow, max-flow min-cut theorem verified)':'(MISMATCH)'}`;
+  $('fOut').textContent=o;
+  // utilisation (unique roads, first-appearance order)
+  const seen=new Set(),util=[];
+  for(const [u,v] of roads){const key=u+'\u0000'+v;if(seen.has(key))continue;seen.add(key);
+    const a=g.idx.get(u),b=g.idx.get(v),c=g.cap.get(a*g.n+b),x=Math.max(0,flow.get(a*g.n+b)||0);
+    util.push({u,v,c,x,p:c?100*x/c:0})}
+  let tu='<tr><th>Road</th><th>Flow</th><th>Capacity</th><th>Utilisation</th></tr>';
+  util.forEach(r=>tu+=`<tr><td>${r.u} → ${r.v}</td><td>${fmt(r.x)}</td><td>${fmt(r.c)}</td><td class="${r.p>=99.995?'sat':''}">${r.p.toFixed(1)}%</td></tr>`);
+  $('tU').innerHTML=tu;
+  // what-if
+  const res=[{label:'Baseline',val:r.total}];
+  const rows=[];
+  for(const [u,v,c] of sc){
+    if(!g.idx.has(u)||!g.idx.has(v))throw new Error('Scenario road "'+u+' '+v+'" uses an unknown junction.');
+    const g2=build(roads,src,dst);g2.setCap(g2.idx.get(u),g2.idx.get(v),c);
+    const f2=g2.edmondsKarp(g2.idx.get(src),g2.idx.get(dst),false).total;
+    res.push({label:`${u}→${v} = ${c}`,val:f2});
+    rows.push([`${u} → ${v}`,c,f2]);
+  }
+  let tw='<tr><th>Scenario (road → new capacity)</th><th>New throughput</th><th>Change</th></tr>';
+  rows.forEach(([rd,c,f])=>{const d=f-r.total,pc=r.total?100*d/r.total:0;tw+=`<tr><td>${rd} = ${fmt(c)}</td><td>${fmt(f)}</td><td class="${d<0?'bad':d>0?'ok':''}">${d>0?'+':''}${fmt(d)} (${pc>0?'+':''}${pc.toFixed(0)}%)</td></tr>`});
+  $('tW').innerHTML=rows.length?tw:'';
+  $('r1').style.display='block';
+  hbars($('c1'),'Road utilisation (%)',util.map(r=>({label:r.u+'→'+r.v,val:r.p})),100);
+  vbars($('c2'),'Throughput: baseline vs what-if (veh/h)',res);
+}
+
+$('bGrid').onclick=()=>{
+  $('busy').style.display='inline';$('bGrid').disabled=true;
+  setTimeout(()=>{try{gridRun()}catch(e){alert(e.message)}$('busy').style.display='none';$('bGrid').disabled=false},30);
+};
+function gridRun(){
+  const ks=$('ks').value.split(',').map(s=>parseInt(s.trim())).filter(x=>x>=2&&x<=60);
+  if(!ks.length)throw new Error('Enter grid sizes between 2 and 60.');
+  const lo=Math.max(1,parseInt($('cmin').value)||200),hi=Math.max(lo,parseInt($('cmax').value)||2000);
+  const seed=parseInt($('seed').value)||0,rows=[];
+  for(const k of ks){
+    const names=Array.from({length:k*k},(_,i)=>'J'+i),r=rng(seed+k),edges=[];
+    const cv=()=>lo+Math.floor(r()*(hi-lo+1));
+    for(let i=0;i<k;i++)for(let j=0;j<k;j++){const u=i*k+j;
+      if(j+1<k)edges.push([names[u],names[u+1],cv()]);
+      if(i+1<k)edges.push([names[u],names[u+k],cv()])}
+    const g=new Net(names,edges);
+    const t0=performance.now();const res=g.edmondsKarp(0,k*k-1,false);const ms=performance.now()-t0;
+    const cut=g.minCut(0).reduce((a,c)=>a+c[2],0);
+    rows.push({k,v:k*k,mf:res.total,it:res.it,ms,ok:cut===res.total});
+  }
+  let h='<tr><th>Grid</th><th>|V|</th><th>Max flow</th><th>Augmentations</th><th>Time (ms)</th><th>Min-cut check</th></tr>';
+  rows.forEach(x=>h+=`<tr><td>${x.k}×${x.k}</td><td>${fmt(x.v)}</td><td>${fmt(x.mf)}</td><td>${x.it}</td><td>${x.ms.toFixed(1)}</td><td class="${x.ok?'ok':'bad'}">${x.ok?'✓':'✗'}</td></tr>`);
+  $('tG').innerHTML=h;$('r2').style.display='block';
+  line($('c3'),'Edmonds-Karp time vs |V|',rows,'ms','ms');
+  line($('c4'),'Augmentations vs |V|',rows,'it','augmentations');
+}
+
+function hbars(svg,title,items,max){
+  const rowH=22,L=170,R=50,W=400,T=28,H=T+items.length*rowH+8,pw=W-L-R;
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+  let s=`<text x="${W/2}" y="16" text-anchor="middle" font-weight="600">${title}</text>`;
+  items.forEach((it,i)=>{
+    const y=T+i*rowH,w=pw*Math.min(it.val,max)/max,sat=it.val>=99.995;
+    s+=`<text class="m" x="${L-6}" y="${y+13}" text-anchor="end">${it.label}</text>`;
+    s+=`<rect x="${L}" y="${y+3}" width="${pw}" height="14" fill="var(--bd)" rx="3" opacity=".5"/>`;
+    s+=`<rect x="${L}" y="${y+3}" width="${w}" height="14" fill="${sat?'var(--ac2)':'var(--ac)'}" rx="3"/>`;
+    s+=`<text x="${L+pw+5}" y="${y+14}">${it.val.toFixed(0)}%</text>`;
+  });
+  svg.innerHTML=s;
+}
+function vbars(svg,title,items){
+  const W=400,H=270,L=48,B=70,T=28,R=12,pw=W-L-R,ph=H-T-B;
+  const hi=Math.max(...items.map(i=>i.val),1)*1.12,bw=Math.min(60,pw/items.length*0.6);
+  let s=`<text x="${W/2}" y="16" text-anchor="middle" font-weight="600">${title}</text>`;
+  for(let i=0;i<=4;i++){const v=hi*i/4,y=T+ph-ph*i/4;s+=`<line x1="${L}" x2="${W-R}" y1="${y}" y2="${y}" stroke="var(--bd)"/><text class="m" x="${L-6}" y="${y+4}" text-anchor="end">${Math.round(v)}</text>`}
+  items.forEach((it,i)=>{
+    const cx=L+pw*(i+.5)/items.length,hh=ph*it.val/hi,base=i===0;
+    const col=base?'var(--ac)':(it.val<items[0].val?'var(--bad)':it.val>items[0].val?'var(--ok)':'var(--mut)');
+    s+=`<rect x="${cx-bw/2}" y="${T+ph-hh}" width="${bw}" height="${hh}" fill="${col}" rx="3"/><text x="${cx}" y="${T+ph-hh-4}" text-anchor="middle">${fmt(it.val)}</text>`;
+    const words=it.label.split(' = ');
+    words.forEach((w,j)=>s+=`<text class="m" x="${cx}" y="${T+ph+14+j*12}" text-anchor="middle">${j?'= '+w:w}</text>`);
+  });
+  svg.innerHTML=s;
+}
+function line(svg,title,rows,key,unit){
+  const W=400,H=270,L=52,B=62,T=28,R=14,pw=W-L-R,ph=H-T-B;
+  const xs=rows.map(r=>r.v),xmin=Math.min(...xs),xmax=Math.max(...xs);
+  const X=v=>L+(xmax===xmin?pw/2:pw*(v-xmin)/(xmax-xmin));
+  const hi=Math.max(...rows.map(r=>r[key]),1e-6)*1.12,Y=v=>T+ph-ph*v/hi,f=v=>v>=100?Math.round(v):v.toFixed(1);
+  let s=`<text x="${W/2}" y="16" text-anchor="middle" font-weight="600">${title}</text>`;
+  for(let i=0;i<=4;i++){const v=hi*i/4,y=Y(v);s+=`<line x1="${L}" x2="${W-R}" y1="${y}" y2="${y}" stroke="var(--bd)"/><text class="m" x="${L-6}" y="${y+4}" text-anchor="end">${f(v)}</text>`}
+  rows.forEach(r=>s+=`<text class="m" x="${X(r.v)}" y="${T+ph+14}" text-anchor="middle">${r.v}</text>`);
+  s+=`<text class="m" x="${L+pw/2}" y="${T+ph+28}" text-anchor="middle">number of junctions |V|</text>`;
+  const pts=rows.map(r=>[X(r.v),Y(r[key])]);
+  s+=`<polyline fill="none" stroke="var(--ac)" stroke-width="2" points="${pts.map(p=>p.join(',')).join(' ')}"/>`;
+  pts.forEach((p,i)=>s+=`<circle cx="${p[0]}" cy="${p[1]}" r="3.5" fill="var(--ac)"/><text x="${p[0]}" y="${p[1]-8}" text-anchor="middle">${f(rows[i][key])}</text>`);
+  s+=`<text class="m" x="${L}" y="${H-12}">${unit}</text>`;
+  svg.innerHTML=s;
+}
+$('bFlow').click();
+</script>
+</body>
+</html>
